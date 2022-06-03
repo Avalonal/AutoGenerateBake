@@ -15,6 +15,9 @@ namespace LinkBake
         [FoldoutGroup("参数", Order = 1), LabelText("DropDown距离")]
         public float DropDis = 0;
 
+        [FoldoutGroup("参数"), LabelText("浮点误差")]
+        public float Eps = 0.0001f;
+
         [FoldoutGroup("参数"), LabelText("是否合并link")]
         public bool MergeLink = false;
 
@@ -39,8 +42,6 @@ namespace LinkBake
         private List<int> _edges;
 
         private bool _showDebugInfo = false;
-        private float eps = 1e-4f;
-
         void Start()
         {
             Init();
@@ -92,11 +93,13 @@ namespace LinkBake
 
         private void InitDataStructure()
         {
-            _links = new List<NavMeshLinkInstance>();
+            _links ??= new List<NavMeshLinkInstance>();
+            _links.Clear();
+
             DropDis = _agentSetting.AgentRadius * 2 + _agentSetting.CellSize * 4;
 
             if (UseKDTree)
-                CalcVerticesWithKDTree();
+                CalcVerticesWithKdTree();
             else 
                 CalcVertices();
 
@@ -142,7 +145,7 @@ namespace LinkBake
             }
         }
 
-        private void CalcVerticesWithKDTree()
+        private void CalcVerticesWithKdTree()
         {
             var vertices = _triangulationData.vertices;
             var indices = _triangulationData.indices;
@@ -175,7 +178,7 @@ namespace LinkBake
 
                 for (int j = resultDis.Count - 1; j >= 0; --j)
                 {
-                    if (resultDis[j] < eps)
+                    if (resultDis[j] < Eps)
                     {
                         Union(results[j], i, ref father);
                     }
@@ -301,7 +304,7 @@ namespace LinkBake
                     var inVec = v - vertices[inNode];
                     inVec = inVec.normalized;
 
-                    for (int outIndex = 0; outIndex <= outNodes[i][0]; ++outIndex)
+                    for (int outIndex = 1; outIndex <= outNodes[i][0]; ++outIndex)
                     {
                         var outNode = outNodes[i][outIndex];
                         var outVec = vertices[outNode] - v;
@@ -309,7 +312,7 @@ namespace LinkBake
 
                         var diff = (inVec - outVec).sqrMagnitude;
 
-                        if (diff < eps)
+                        if (diff < Eps)
                         {
                             RemoveNodeFromGraph(inNode, inGraph[i], inNodes[i]);
                             RemoveNodeFromGraph(outNode, outGraph[i], outNodes[i]);

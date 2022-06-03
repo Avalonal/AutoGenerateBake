@@ -122,7 +122,7 @@ NavMeshSettings:
     preserveTilesOutsideBounds: 0
     debug:
       m_Flags: 0
-  m_NavMeshData: {fileID: 23800000, guid: 7186e606f4cb25d4e8d8a720ce7fcb1e, type: 2}
+  m_NavMeshData: {fileID: 23800000, guid: 5b5d39bed0e16b945961900cc484c33b, type: 2}
 --- !u!1 &215153568
 GameObject:
   m_ObjectHideFlags: 0
@@ -1680,6 +1680,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   DropDis: 1.4666667
+  Eps: 0.01
   MergeLink: 1
   UseKDTree: 1
   ShowAllTriangulations: 0
