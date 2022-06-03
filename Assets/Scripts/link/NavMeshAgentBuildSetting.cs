@@ -99,4 +99,12 @@ namespace LinkBake
             }
         }
     }
+
+    public enum NavMeshLayer
+    {
+        Walkable,
+        NotWalkable,
+        Jump,
+        Drop,
+    }
 }

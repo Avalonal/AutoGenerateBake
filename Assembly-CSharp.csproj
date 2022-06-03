@@ -53,13 +53,28 @@
     <UnityVersion>2020.3.7f1c1</UnityVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Assets\Scripts\MathTest.cs" />
-    <Compile Include="Assets\Scripts\Controller.cs" />
-    <Compile Include="Assets\Scripts\Agent.cs" />
-    <Compile Include="Assets\Scripts\link\linkTest.cs" />
-    <Compile Include="Assets\Scripts\link\vectorTest.cs" />
     <Compile Include="Assets\Scripts\link\BakeLink.cs" />
+    <Compile Include="Assets\Scripts\MathTest.cs" />
+    <Compile Include="Assets\Scripts\agent\NavigationAgent.cs" />
     <Compile Include="Assets\Scripts\link\NavMeshAgentBuildSetting.cs" />
+    <Compile Include="Assets\Scripts\Controller.cs" />
+    <Compile Include="Assets\Scripts\link\vectorTest.cs" />
+    <Compile Include="Assets\Scripts\link\linkTest.cs" />
+    <Compile Include="Assets\Scripts\Agent.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDQuery\KDQueryNode.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDQuery\Base.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDQuery\QueryRadius.cs" />
+    <Compile Include="Assets\KDTree\Heap\MinHeap.cs" />
+    <Compile Include="Assets\KDTree\Heap\BaseHeap.cs" />
+    <Compile Include="Assets\KDTree\Heap\MaxHeap.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDQuery\Debug.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDTree.cs" />
+    <Compile Include="Assets\KDTree\Heap\KSmallest.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDQuery\QueryKNearest.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDNode.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDQuery\QueryClosest.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDQuery\QueryInterval.cs" />
+    <Compile Include="Assets\KDTree\KDTree\KDBounds.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">
@@ -676,17 +691,17 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="NavMeshComponents.csproj">
-      <Project>{42834043-FE70-48C3-B188-1D9FCC7B7EA5}</Project>
-      <Name>NavMeshComponents</Name>
+    <ProjectReference Include="Sirenix.OdinInspector.CompatibilityLayer.csproj">
+      <Project>{F441D959-89C9-304F-C415-2DFC179F6B45}</Project>
+      <Name>Sirenix.OdinInspector.CompatibilityLayer</Name>
     </ProjectReference>
     <ProjectReference Include="NavMeshComponentsEditor.csproj">
       <Project>{C11FDF24-343B-8A8D-E8F8-76CC15666642}</Project>
       <Name>NavMeshComponentsEditor</Name>
     </ProjectReference>
-    <ProjectReference Include="Sirenix.OdinInspector.CompatibilityLayer.csproj">
-      <Project>{F441D959-89C9-304F-C415-2DFC179F6B45}</Project>
-      <Name>Sirenix.OdinInspector.CompatibilityLayer</Name>
+    <ProjectReference Include="NavMeshComponents.csproj">
+      <Project>{42834043-FE70-48C3-B188-1D9FCC7B7EA5}</Project>
+      <Name>NavMeshComponents</Name>
     </ProjectReference>
     <ProjectReference Include="Sirenix.OdinInspector.CompatibilityLayer.Editor.csproj">
       <Project>{4B9C83F7-489A-3DED-27F3-7470E6A879D7}</Project>

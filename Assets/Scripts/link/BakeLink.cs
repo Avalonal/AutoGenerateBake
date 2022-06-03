@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using DataStructures.ViliWonka.KDTree;
 using Sirenix.OdinInspector;
 using Sirenix.Utilities.Editor;
 using UnityEditor;
@@ -10,7 +11,16 @@ namespace LinkBake
     [ExecuteInEditMode]
     public class BakeLink : MonoBehaviour
     {
-        [FoldoutGroup("调试", Order = 1), LabelText("显示所有三角面")]
+        [FoldoutGroup("参数", Order = 1), LabelText("DropDown距离")]
+        public float DropDis = 0;
+
+        [FoldoutGroup("参数"), LabelText("是否合并link")]
+        public bool MergeLink = false;
+
+        [FoldoutGroup("参数"), LabelText("是否使用KDTree")]
+        public bool UseKDTree = false;
+
+        [FoldoutGroup("调试", Order = 9), LabelText("显示所有三角面")]
         public bool ShowAllTriangulations = false;
 
         [FoldoutGroup("调试"), LabelText("指定边id")]
@@ -50,6 +60,7 @@ namespace LinkBake
                 if (ShowSelectedEdge)
                 {
                     DrawEdge(EdgeId, Color.blue);
+                    RemoveLinks();
                     GenerateDropDownLinksAlongSelectEdge(EdgeId);
                 }
             }
@@ -57,7 +68,7 @@ namespace LinkBake
 
         #region 初始化
 
-        [Button("初始化")]
+        [FoldoutGroup("操作", Order = 0), Button("初始化")]
         private void Init()
         {
             InitAgentSetting();
@@ -80,10 +91,19 @@ namespace LinkBake
         private void InitDataStructure()
         {
             _links = new List<NavMeshLinkInstance>();
+            DropDis = _agentSetting.AgentRadius * 2 + _agentSetting.CellSize * 4;
 
-            CalcVertices();
+            if (UseKDTree)
+                CalcVerticesWithKDTree();
+            else 
+                CalcVertices();
+
             CalcEdges(out _edges);
         }
+
+        #endregion
+
+        #region 从NavMesh生成Edge数据
 
         private void CalcVertices()
         {
@@ -92,6 +112,7 @@ namespace LinkBake
 
             Dictionary<Vector3, int> verticesId = new Dictionary<Vector3, int>();
             List<int> father = new List<int>();
+
             for (int i = 0; i < vertices.Length; ++i)
                 father.Add(i);
 
@@ -115,6 +136,74 @@ namespace LinkBake
             {
                 indices[i] = father[indices[i]];
             }
+        }
+
+        private void CalcVerticesWithKDTree()
+        {
+            var vertices = _triangulationData.vertices;
+            var indices = _triangulationData.indices;
+
+            var kdTree = new KDTree(vertices, 8);
+            var query = new KDQuery();
+
+            List<int> results = new List<int>();
+            List<float> resultDis = new List<float>();
+            List<int> father = new List<int>();
+            List<int> newIds = new List<int>();
+            List<Vector3> newVertices = new List<Vector3>();
+
+            var eps = 1e-4f;
+
+            for (int i = 0; i < vertices.Length; ++i)
+                father.Add(i);
+
+            for (int i = 0; i < vertices.Length; ++i)
+            {
+                var fi = Find(i, ref father);
+
+                if (fi != i)
+                    continue;
+
+                var v = vertices[i];
+
+                results.Clear();
+                resultDis.Clear();
+
+                query.KNearest(kdTree, v, 10, results, resultDis);
+
+                for (int j = 0; j < results.Count; ++j)
+                {
+                    if (resultDis[j] < eps)
+                    {
+                        Union(results[j], i, ref father);
+                    }
+                }
+            }
+
+            for (int i = 0; i < vertices.Length; ++i)
+            {
+                var fi = Find(i, ref father);
+
+                if (fi == i)
+                {
+                    newIds.Add(newVertices.Count);
+                    newVertices.Add(vertices[i]);
+                }
+                else
+                {
+                    newIds.Add(-1);
+                }
+            }
+
+            for (int i = 0; i < indices.Length; ++i)
+            {
+                var index = indices[i];
+                var fi = Find(index, ref father);
+
+                indices[i] = newIds[fi];
+            }
+
+            _triangulationData.vertices = newVertices.ToArray();
         }
 
         private void CalcEdges(out List<int> edges)
@@ -162,13 +251,48 @@ namespace LinkBake
                 hashSet.Add(pair);
         }
 
+        private void MergeEdges(ref List<int> edges)
+        {
+            var vertices = _triangulationData.vertices;
+            var indices = _triangulationData.indices;
+
+            List<LinkedList<int>> graph = new List<LinkedList<int>>();
+            // for(int i=0;i<)
+        }
+
+        #endregion
+
+        #region 并查集
+
+        int Find(int x, ref List<int> f)
+        {
+            return x == f[x] ? x : f[x] = Find(f[x], ref f);
+        }
+
+        void Union(int x, int y, ref List<int> f)
+        {
+            var fx = Find(f[x], ref f);
+            var fy = Find(f[y], ref f);
+            if (fx != fy)
+            {
+                f[fx] = fy;
+            }
+        }
+
         #endregion
 
         #region dropdown link
 
+        [FoldoutGroup("操作"), Button("生成dropdown link")]
         private void GenerateDropDownLinks()
         {
+            RemoveLinks();
 
+            var total = (int)(_edges.Count * 0.5f);
+            for (int i = 0; i < total; ++i)
+            {
+                GenerateDropDownLinksAlongSelectEdge(i);
+            }
         }
 
         private void GenerateDropDownLinksAlongSelectEdge(int index)
@@ -183,52 +307,57 @@ namespace LinkBake
             normal = new Vector3(-normal.z, 0, normal.x);
             normal = normal.normalized;
 
-            var mid = (start + end) * 0.5f;
+            var errorOffset = -_agentSetting.CellSize * normal;
+            var mid = (start + end) * 0.5f + errorOffset;
 
             var radius = _agentSetting.AgentRadius;
             var dropHeight = _agentSetting.LedgeDropHeight;
-            var cellSize = _agentSetting.CellSize;
 
-            var sampleOffset = radius * 2f + cellSize * 4f;
+            var sampleOffset = DropDis * normal;
 
-            var sampleStart = start + normal * sampleOffset;
-            var sampleEnd = end + normal * sampleOffset;
+            var sampleStart = start + sampleOffset + errorOffset;
+            var sampleEnd = end + sampleOffset + errorOffset;
 
             var checkPos = mid + normal * radius * 0.5f;
-
-            Debug.DrawLine(mid, checkPos, Color.green);
+            var sampleStep = radius * 2f;
 
             NavMeshHit hit;
-            if (NavMesh.SamplePosition(checkPos, out hit, radius * 0.4f, -1))
+            if (NavMesh.SamplePosition(checkPos, out hit, radius * 0.4f - _agentSetting.CellSize, -1))
             {
                 return;
             }
 
-            Debug.DrawLine(checkPos, checkPos + normal * radius * 0.4f, Color.red);
-
             List<Vector3> samplePositions;
-            GenerateSamplePositions(sampleStart, sampleEnd, radius * 2f, out samplePositions);
+            GenerateSamplePositions(sampleStart, sampleEnd, sampleStep, out samplePositions);
 
-            foreach (var samplePosition in samplePositions)
+            List<LinkInfo> totalLinkInfos;
+            GenerateDropDownLinkInfos(radius, dropHeight, sampleOffset, ref samplePositions, out totalLinkInfos);
+
+            if (MergeLink)
             {
-                Debug.DrawLine(samplePosition, samplePosition + Vector3.up, Color.blue);
+                List<LinkInfo> mergedLinkInfos;
+                MergeLinks(sampleStep, ref totalLinkInfos, out mergedLinkInfos);
+
+                AddDropDownLinks(ref mergedLinkInfos);
             }
-
-            List<Vector3> dropDownPositions;
-            GenerateDropDownPositions(radius, dropHeight, ref samplePositions, out dropDownPositions);
-
-            foreach (var dropDownPosition in dropDownPositions)
-            {
-                Debug.DrawLine(dropDownPosition, dropDownPosition + normal * radius, Color.green);
-            }
-
+            else
+                AddDropDownLinks(ref totalLinkInfos);
         }
 
-        private void GenerateDropDownPositions(float radius, float dropHeight, ref List<Vector3> samplePositions, out List<Vector3> dropDownPositions)
+        private void AddDropDownLinks(ref List<LinkInfo> dropDownLinkInfos)
         {
-            dropDownPositions = new List<Vector3>();
-            foreach (var samplePosition in samplePositions)
+            foreach (var info in dropDownLinkInfos)
             {
+                AddLink(info, NavMeshLayer.Drop);
+            }
+        }
+
+        private void GenerateDropDownLinkInfos(float radius, float dropHeight, Vector3 offset, ref List<Vector3> samplePositions, out List<LinkInfo> dropDownLinkInfos)
+        {
+            dropDownLinkInfos = new List<LinkInfo>();
+            for (int i = 0; i < samplePositions.Count; i++)
+            {
+                var samplePosition = samplePositions[i];
                 if(Physics.CheckSphere(samplePosition, radius, -1))
                     continue;
 
@@ -239,7 +368,7 @@ namespace LinkBake
                 NavMeshHit navHit;
                 if (NavMesh.SamplePosition(hit.point, out navHit, radius, -1))
                 {
-                    dropDownPositions.Add(navHit.position);
+                    dropDownLinkInfos.Add(new LinkInfo{Start = samplePosition - offset, End = navHit.position});
                 }
             }
         }
@@ -268,16 +397,122 @@ namespace LinkBake
 
         #endregion
 
+        #region manage link
+
+        private void AddLink(Vector3 start, Vector3 end, NavMeshLayer type)
+        {
+            NavMeshLinkData link = new NavMeshLinkData();
+
+            link.startPosition = start;
+            link.endPosition = end;
+            link.bidirectional = true;
+            link.agentTypeID = 0;
+            link.costModifier = -1;
+
+            link.width = 0;
+            link.area = (int)type;
+
+            var linkInstance = NavMesh.AddLink(link);
+
+            if(linkInstance.valid)
+                _links.Add(linkInstance);
+            else
+            {
+                Debug.LogError("add link failed!");
+            }
+        }
+
+        private void AddLink(LinkInfo linkInfo, NavMeshLayer type)
+        {
+            NavMeshLinkData link = new NavMeshLinkData();
+
+            link.startPosition = linkInfo.Start;
+            link.endPosition = linkInfo.End;
+            link.bidirectional = true;
+            link.agentTypeID = 0;
+            link.costModifier = -1;
+
+            link.width = linkInfo.Width;
+            link.area = (int)type;
+
+            var linkInstance = NavMesh.AddLink(link);
+            if (linkInstance.valid)
+                _links.Add(linkInstance);
+            else
+            {
+                Debug.LogError("add link failed!");
+            }
+        }
+
+        [FoldoutGroup("操作"), Button("移除所有link")]
         private void RemoveLinks()
         {
             foreach (var link in _links)
             {
                 if (link.valid)
-                    link.Remove();
+                    NavMesh.RemoveLink(link);
             }
 
             _links.Clear();
         }
+
+        private void MergeLinks(float stepSize, ref List<LinkInfo> totalLinkInfos, out List<LinkInfo> mergedLinkInfos)
+        {
+            mergedLinkInfos = new List<LinkInfo>();
+            if (totalLinkInfos.Count <= 0)
+            {
+                return;
+            }
+
+            var startSamplePos = totalLinkInfos[0].Start;
+            var endSamplePos = totalLinkInfos[totalLinkInfos.Count - 1].Start;
+            var dir = endSamplePos - startSamplePos;
+            dir = dir.normalized;
+
+            var step = stepSize * dir;
+
+            var linkLeftBound = totalLinkInfos[0];
+            var linkRightBound = totalLinkInfos[0];
+
+            for (int i = 1; i < totalLinkInfos.Count; ++i)
+            {
+                var linkInfo = totalLinkInfos[i];
+
+                var tmpStep = linkInfo.End - linkRightBound.End;
+                var diff = (tmpStep - step).sqrMagnitude;
+
+                if (diff <= 0.001f)
+                {
+                    linkLeftBound.Width += stepSize;
+                    linkRightBound = linkInfo;
+                }
+                else
+                {
+                    GenerateMergedLink(linkLeftBound, linkRightBound, ref mergedLinkInfos);
+
+                    linkLeftBound = linkRightBound = linkInfo;
+                }
+            }
+
+            GenerateMergedLink(linkLeftBound, linkRightBound, ref mergedLinkInfos);
+        }
+
+        private void GenerateMergedLink(LinkInfo left, LinkInfo right, ref List<LinkInfo> mergedLinkInfos)
+        {
+            var startMid = (left.Start + right.Start) * 0.5f;
+            var endMid = (left.End + right.End) * 0.5f;
+            var width = left.Width;
+
+            mergedLinkInfos.Add(new LinkInfo
+            {
+                Start = startMid,
+                End = endMid,
+                Width = width,
+            });
+        }
+
+        #endregion
+
 
         #region Debug
 
@@ -358,5 +593,12 @@ namespace LinkBake
                 return ((obj.Key * 397) ^ obj.Value) + ((obj.Value * 397) ^ obj.Key);
             }
         }
+    }
+
+    public struct LinkInfo
+    {
+        public Vector3 Start;
+        public Vector3 End;
+        public float Width;
     }
 }
