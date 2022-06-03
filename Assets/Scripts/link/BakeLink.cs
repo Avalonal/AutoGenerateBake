@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DataStructures.ViliWonka.KDTree;
 using Sirenix.OdinInspector;
@@ -38,6 +39,7 @@ namespace LinkBake
         private List<int> _edges;
 
         private bool _showDebugInfo = false;
+        private float eps = 1e-4f;
 
         void Start()
         {
@@ -99,6 +101,8 @@ namespace LinkBake
                 CalcVertices();
 
             CalcEdges(out _edges);
+            MergeEdges(ref _edges);
+            CalcEdgesAgain(ref _edges);
         }
 
         #endregion
@@ -152,8 +156,6 @@ namespace LinkBake
             List<int> newIds = new List<int>();
             List<Vector3> newVertices = new List<Vector3>();
 
-            var eps = 1e-4f;
-
             for (int i = 0; i < vertices.Length; ++i)
                 father.Add(i);
 
@@ -171,12 +173,14 @@ namespace LinkBake
 
                 query.KNearest(kdTree, v, 10, results, resultDis);
 
-                for (int j = 0; j < results.Count; ++j)
+                for (int j = resultDis.Count - 1; j >= 0; --j)
                 {
                     if (resultDis[j] < eps)
                     {
                         Union(results[j], i, ref father);
                     }
+                    else 
+                        break;
                 }
             }
 
@@ -236,6 +240,31 @@ namespace LinkBake
             }
         }
 
+        private void CalcEdgesAgain(ref List<int> edges)
+        {
+            var edgeCompare = new EdgeCompare();
+            HashSet<KeyValuePair<int, int>> hashSet = new HashSet<KeyValuePair<int, int>>(edgeCompare);
+            HashSet<KeyValuePair<int, int>> duplicate = new HashSet<KeyValuePair<int, int>>(edgeCompare);
+
+            for (int i = 0; i < edges.Count; i += 2)
+            {
+                var p0 = edges[i];
+                var p1 = edges[i + 1];
+
+                HandleDuplicateEdge(p0, p1, ref hashSet, ref duplicate);
+            }
+
+            edges = new List<int>();
+            foreach (var pair in hashSet)
+            {
+                if (EdgeExisted(pair, ref duplicate))
+                    continue;
+
+                edges.Add(pair.Key);
+                edges.Add(pair.Value);
+            }
+        }
+
         private bool EdgeExisted(KeyValuePair<int, int> pair, ref HashSet<KeyValuePair<int, int>> hashSet)
         {
             return hashSet.Contains(pair);
@@ -254,10 +283,121 @@ namespace LinkBake
         private void MergeEdges(ref List<int> edges)
         {
             var vertices = _triangulationData.vertices;
-            var indices = _triangulationData.indices;
 
-            List<LinkedList<int>> graph = new List<LinkedList<int>>();
-            // for(int i=0;i<)
+            List<Dictionary<int, int>> inGraph;
+            List<Dictionary<int, int>> outGraph;
+            List<List<int>> inNodes;
+            List<List<int>> outNodes;
+
+            GenerateGraph(ref edges, out inGraph, out outGraph, out inNodes, out outNodes);
+
+            for (int i = 0; i < vertices.Length; ++i)
+            {
+                var v = vertices[i];
+
+                for (int inIndex = 1; inIndex <= inNodes[i][0]; ++inIndex)
+                {
+                    var inNode = inNodes[i][inIndex];
+                    var inVec = v - vertices[inNode];
+                    inVec = inVec.normalized;
+
+                    for (int outIndex = 0; outIndex <= outNodes[i][0]; ++outIndex)
+                    {
+                        var outNode = outNodes[i][outIndex];
+                        var outVec = vertices[outNode] - v;
+                        outVec = outVec.normalized;
+
+                        var diff = (inVec - outVec).sqrMagnitude;
+
+                        if (diff < eps)
+                        {
+                            RemoveNodeFromGraph(inNode, inGraph[i], inNodes[i]);
+                            RemoveNodeFromGraph(outNode, outGraph[i], outNodes[i]);
+                            RemoveNodeFromGraph(i, outGraph[inNode], outNodes[inNode]);
+                            RemoveNodeFromGraph(i, inGraph[outNode], inNodes[outNode]);
+
+                            AddNodeToGraph(outNode, outGraph[inNode], outNodes[inNode]);
+                            AddNodeToGraph(inNode, inGraph[outNode], inNodes[outNode]);
+                        }
+                    }
+                }
+            }
+
+            edges.Clear();
+
+            for (int i = 0; i < vertices.Length; ++i)
+            {
+                for (int outIndex = 1; outIndex <= outNodes[i][0]; ++outIndex)
+                {
+                    var outNode = outNodes[i][outIndex];
+                    
+                    edges.Add(i);
+                    edges.Add(outNode);
+                }
+            }
+        }
+
+        private void GenerateGraph(ref List<int> edges, out List<Dictionary<int, int>> inGraph, out List<Dictionary<int, int>> outGraph, out List<List<int>> inNodes, out List<List<int>> outNodes)
+        {
+            var vertices = _triangulationData.vertices;
+
+            inGraph = new List<Dictionary<int, int>>();
+            outGraph = new List<Dictionary<int, int>>();
+            inNodes = new List<List<int>>();
+            outNodes = new List<List<int>>();
+
+            for (int i = 0; i < vertices.Length; ++i)
+            {
+                inGraph.Add(new Dictionary<int, int>());
+                outGraph.Add(new Dictionary<int, int>());
+                inNodes.Add(new List<int>{0});
+                outNodes.Add(new List<int>{0});
+            }
+
+            for (int i = 0; i < edges.Count; i += 2)
+            {
+                var p0 = edges[i];
+                var p1 = edges[i + 1];
+
+                AddNodeToGraph(p0, inGraph[p1], inNodes[p1]);
+
+                AddNodeToGraph(p1, outGraph[p0], outNodes[p0]);
+            }
+        }
+
+        private void AddNodeToGraph(int point, Dictionary<int, int> graph, List<int> nodes)
+        {
+            int index;
+            if (!graph.TryGetValue(point, out index))
+            {
+                if (nodes[0] + 1 < nodes.Count)
+                {
+                    nodes[nodes[0] + 1] = point;
+                }
+                else
+                {
+                    nodes.Add(point);
+                }
+                ++nodes[0];
+                graph.Add(point, nodes[0]);
+            }
+        }
+
+        private void RemoveNodeFromGraph(int point, Dictionary<int, int> graph, List<int> nodes)
+        {
+            int index;
+            if (graph.TryGetValue(point, out index))
+            {
+                graph.Remove(point);
+                nodes[index] = nodes[nodes[0]];
+                nodes[nodes[0]] = -1;
+                --nodes[0];
+            }
+            else
+            {
+                Debug.LogErrorFormat("error remove node from graph at {0}", point);
+            }
+           
         }
 
         #endregion
@@ -530,8 +670,8 @@ namespace LinkBake
             var p1 = vertices[_edges[2 * index + 1]];
 
             Debug.DrawLine(p0, p1, color);
-            Handles.Label(p0, _edges[2 * index].ToString(), SirenixGUIStyles.BlackLabel);
-            Handles.Label(p1, _edges[2 * index + 1].ToString(), SirenixGUIStyles.BlackLabel);
+            Handles.Label(p0, "s: " +  _edges[2 * index].ToString(), SirenixGUIStyles.BlackLabel);
+            Handles.Label(p1, "e: " + _edges[2 * index + 1].ToString(), SirenixGUIStyles.BlackLabel);
         }
 
         private void DrawTriangulation(int index, Color color, bool showLabel = true)
