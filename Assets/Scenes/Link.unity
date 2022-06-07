@@ -1683,10 +1683,14 @@ MonoBehaviour:
   Eps: 0.01
   MergeLink: 1
   UseKDTree: 1
+  SampleRoot: []
   ShowAllTriangulations: 0
   EdgeId: 0
   ShowSelectedEdge: 0
+  ShowAllEdgesFromStart: 0
   ShowAllEdges: 1
+  RealTimeUpdateLinks: 0
+  SelectPos: {x: 0, y: 0, z: 0}
 --- !u!4 &1412847598
 Transform:
   m_ObjectHideFlags: 0

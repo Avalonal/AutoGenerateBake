@@ -1,58 +1,98 @@
+ï»¿using DataStructures.ViliWonka.KDTree;
+using LinkUtils;
+using Sirenix.OdinInspector;
+using Sirenix.OdinInspector.Editor;
+using Sirenix.Utilities.Editor;
 using System;
 using System.Collections.Generic;
-using DataStructures.ViliWonka.KDTree;
-using Sirenix.OdinInspector;
-using Sirenix.Utilities.Editor;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.AI;
 
 namespace LinkBake
 {
     [ExecuteInEditMode]
-    public class BakeLink : MonoBehaviour
+    public class BakeLink : OdinEditorWindow
     {
-        [FoldoutGroup("²ÎÊı", Order = 1), LabelText("DropDown¾àÀë")]
+        [FoldoutGroup("å‚æ•°"), LabelText("DropDownè·ç¦»")]
         public float DropDis = 0;
 
-        [FoldoutGroup("²ÎÊı"), LabelText("¸¡µãÎó²î")]
+        [FoldoutGroup("å‚æ•°"), LabelText("DropDowné«˜åº¦")]
+        public float DropHeight = 4;
+
+        [FoldoutGroup("å‚æ•°"), LabelText("æµ®ç‚¹è¯¯å·®")]
         public float Eps = 0.0001f;
 
-        [FoldoutGroup("²ÎÊı"), LabelText("ÊÇ·ñºÏ²¢link")]
+        [FoldoutGroup("å‚æ•°"), LabelText("æ˜¯å¦åˆå¹¶link")]
         public bool MergeLink = false;
 
-        [FoldoutGroup("²ÎÊı"), LabelText("ÊÇ·ñÊ¹ÓÃKDTree")]
+        [FoldoutGroup("å‚æ•°"), LabelText("æ˜¯å¦ä½¿ç”¨KDTree")]
         public bool UseKDTree = false;
 
-        [FoldoutGroup("µ÷ÊÔ", Order = 9), LabelText("ÏÔÊ¾ËùÓĞÈı½ÇÃæ")]
+        [FoldoutGroup("å‚æ•°"), LabelText("éœ€è¦linkåŒºåŸŸçš„é‡‡æ ·ç‚¹é›†")]
+        public List<Vector3> SampleRoot;
+
+        [FoldoutGroup("è°ƒè¯•"), LabelText("æ˜¾ç¤ºæ‰€æœ‰ä¸‰è§’é¢")]
         public bool ShowAllTriangulations = false;
 
-        [FoldoutGroup("µ÷ÊÔ"), LabelText("Ö¸¶¨±ßid")]
+        [FoldoutGroup("è°ƒè¯•"), LabelText("æŒ‡å®šè¾¹id")]
         public int EdgeId = 0;
 
-        [FoldoutGroup("µ÷ÊÔ"), LabelText("ÏÔÊ¾Ö¸¶¨±ß")]
+        [FoldoutGroup("è°ƒè¯•"), LabelText("æ˜¾ç¤ºæŒ‡å®šè¾¹")]
         public bool ShowSelectedEdge = false;
 
-        [FoldoutGroup("µ÷ÊÔ"), LabelText("ÏÔÊ¾ËùÓĞ±ß")]
+        [FoldoutGroup("è°ƒè¯•"), LabelText("æ˜¾ç¤ºæŒ‡å®šè¾¹èµ·ç‚¹çš„æ‰€æœ‰å‡ºè¾¹")]
+        public bool ShowAllEdgesFromStart = false;
+
+        [FoldoutGroup("è°ƒè¯•"), LabelText("æ˜¾ç¤ºæ‰€æœ‰è¾¹")]
         public bool ShowAllEdges = true;
+
+        [FoldoutGroup("è°ƒè¯•"), LabelText("æ˜¯å¦å®æ—¶æ›´æ–°link")]
+        public bool RealTimeUpdateLinks = false;
+
+        [FoldoutGroup("è°ƒè¯•"), LabelText("å½“å‰é€‰ä¸­ç‚¹")]
+        public Vector3 SelectPos;
 
         private NavMeshAgentBuildSetting _agentSetting;
         private NavMeshTriangulation _triangulationData;
         private List<NavMeshLinkInstance> _links;
+        private List<LinkInfo> _linkInfos;
         private List<int> _edges;
+        private Vector3[] _vertices;
+        private int[] _indices;
+
+        private NavMeshPath _path;
 
         private bool _showDebugInfo = false;
-        void Start()
+        private static BakeLink _instance;
+        private LinkBakeDrawHelper _drawHelper;
+        private GameObject _drawHelperGo;
+
+
+        [MenuItem("Tools/linkçƒ˜ç„™å·¥å…·")]
+        public static void OpenWindow()
         {
-            Init();
+            var window = GetWindow<BakeLink>("linkçƒ˜ç„™å·¥å…·", typeof(BakeLink));
+            _instance = window;
+            _instance.Init();
         }
 
         void Update()
         {
             EdgeId = Mathf.Clamp(EdgeId, 0, _edges.Count / 2 - 1);
+            try
+            {
+                if(_triangulationData.indices!=null && RealTimeUpdateLinks)
+                    GenerateDropDownLinks();
+            }
+            catch (NullReferenceException e)
+            {
+                Debug.LogWarning(e.Message);
+            }
         }
 
-        void OnDrawGizmos()
+        public void OnDrawGizmos()
         {
             if (_showDebugInfo)
             {
@@ -60,23 +100,32 @@ namespace LinkBake
                     DrawAllTriangulation();
                 if (ShowAllEdges)
                     DrawEdges();
+                if (ShowAllEdgesFromStart)
+                    DrawAllEdgesFromSelectEdgeStartPoint(EdgeId, Color.green);
                 if (ShowSelectedEdge)
                 {
                     DrawEdge(EdgeId, Color.blue);
                     RemoveLinks();
                     GenerateDropDownLinksAlongSelectEdge(EdgeId);
                 }
+
+                DrawAllSampleRoot(ColorUtils.orange);
+                DrawSelectPos(Color.red);
             }
+
+            SceneView.RepaintAll();
         }
 
-        #region ³õÊ¼»¯
+        #region åˆå§‹åŒ–
 
-        [FoldoutGroup("²Ù×÷", Order = 0), Button("³õÊ¼»¯")]
+        [FoldoutGroup("æ“ä½œ"), Button("åˆå§‹åŒ–")]
         private void Init()
         {
+            RemoveLinks();
             InitAgentSetting();
             InitTriangulationData();
             InitDataStructure();
+            InitDraw();
         }
 
         private void InitAgentSetting()
@@ -89,12 +138,24 @@ namespace LinkBake
         private void InitTriangulationData()
         {
             _triangulationData = NavMesh.CalculateTriangulation();
+            _vertices = _triangulationData.vertices;
+            _indices = _triangulationData.indices;
+
+            _triangulationData = NavMesh.CalculateTriangulation();
         }
 
         private void InitDataStructure()
         {
-            _links ??= new List<NavMeshLinkInstance>();
+            _links = _links?? new List<NavMeshLinkInstance>();
             _links.Clear();
+
+            _linkInfos = _linkInfos ?? new List<LinkInfo>();
+            _linkInfos.Clear();
+
+            SampleRoot = SampleRoot ?? new List<Vector3>();
+            SampleRoot.Clear();
+
+            _path = new NavMeshPath();
 
             DropDis = _agentSetting.AgentRadius * 2 + _agentSetting.CellSize * 4;
 
@@ -108,14 +169,44 @@ namespace LinkBake
             CalcEdgesAgain(ref _edges);
         }
 
+        private void InitDraw()
+        {
+            _drawHelperGo = GetDrawHelper("linkBakeHelper");
+            _drawHelper = _drawHelperGo.GetComponent<LinkBakeDrawHelper>();
+            if (_drawHelper == null)
+                _drawHelper = _drawHelperGo.AddComponent<LinkBakeDrawHelper>();
+
+            _instance = this;
+            _drawHelper.Init(_instance);
+
+            SceneView.onSceneGUIDelegate -= OnSceneGUI;
+            SceneView.onSceneGUIDelegate += OnSceneGUI;
+        }
+
+        private GameObject GetDrawHelper(string findObjName)
+        {
+            var scene = EditorSceneManager.GetActiveScene();
+            GameObject[] objects = scene.GetRootGameObjects();
+
+            for (int j = 0; j < objects.Length; j++)
+            {
+                if (objects[j].name == findObjName)
+                {
+                    return objects[j];
+                }
+            }
+
+            return new GameObject(findObjName);
+        }
+
         #endregion
 
-        #region ´ÓNavMeshÉú³ÉEdgeÊı¾İ
+        #region ä»NavMeshç”ŸæˆEdgeæ•°æ®
 
         private void CalcVertices()
         {
-            var vertices = _triangulationData.vertices;
-            var indices = _triangulationData.indices;
+            var vertices = _vertices;
+            var indices = _indices;
 
             Dictionary<Vector3, int> verticesId = new Dictionary<Vector3, int>();
             List<int> father = new List<int>();
@@ -147,8 +238,8 @@ namespace LinkBake
 
         private void CalcVerticesWithKdTree()
         {
-            var vertices = _triangulationData.vertices;
-            var indices = _triangulationData.indices;
+            var vertices = _vertices;
+            var indices = _indices;
 
             var kdTree = new KDTree(vertices, 8);
             var query = new KDQuery();
@@ -210,12 +301,12 @@ namespace LinkBake
                 indices[i] = newIds[fi];
             }
 
-            _triangulationData.vertices = newVertices.ToArray();
+            _vertices = newVertices.ToArray();
         }
 
         private void CalcEdges(out List<int> edges)
         {
-            var indices = _triangulationData.indices;
+            var indices = _indices;
 
             var edgeCompare = new EdgeCompare();
             HashSet<KeyValuePair<int, int>> hashSet = new HashSet<KeyValuePair<int, int>>(edgeCompare);
@@ -285,28 +376,26 @@ namespace LinkBake
 
         private void MergeEdges(ref List<int> edges)
         {
-            var vertices = _triangulationData.vertices;
+            var vertices = _vertices;
 
-            List<Dictionary<int, int>> inGraph;
-            List<Dictionary<int, int>> outGraph;
-            List<List<int>> inNodes;
-            List<List<int>> outNodes;
+            List<QuickHashList<int>> inGraph;
+            List<QuickHashList<int>> outGraph;
 
-            GenerateGraph(ref edges, out inGraph, out outGraph, out inNodes, out outNodes);
+            GenerateGraph(ref edges, out inGraph, out outGraph);
 
             for (int i = 0; i < vertices.Length; ++i)
             {
                 var v = vertices[i];
 
-                for (int inIndex = 1; inIndex <= inNodes[i][0]; ++inIndex)
+                for (int inIndex = 0; inIndex < inGraph[i].Count; ++inIndex)
                 {
-                    var inNode = inNodes[i][inIndex];
+                    var inNode = inGraph[i][inIndex];
                     var inVec = v - vertices[inNode];
                     inVec = inVec.normalized;
 
-                    for (int outIndex = 1; outIndex <= outNodes[i][0]; ++outIndex)
+                    for (int outIndex = 0; outIndex < outGraph[i].Count; ++outIndex)
                     {
-                        var outNode = outNodes[i][outIndex];
+                        var outNode = outGraph[i][outIndex];
                         var outVec = vertices[outNode] - v;
                         outVec = outVec.normalized;
 
@@ -314,13 +403,14 @@ namespace LinkBake
 
                         if (diff < Eps)
                         {
-                            RemoveNodeFromGraph(inNode, inGraph[i], inNodes[i]);
-                            RemoveNodeFromGraph(outNode, outGraph[i], outNodes[i]);
-                            RemoveNodeFromGraph(i, outGraph[inNode], outNodes[inNode]);
-                            RemoveNodeFromGraph(i, inGraph[outNode], inNodes[outNode]);
+                            inGraph[i].Remove(inNode);
+                            outGraph[i].Remove(outNode);
 
-                            AddNodeToGraph(outNode, outGraph[inNode], outNodes[inNode]);
-                            AddNodeToGraph(inNode, inGraph[outNode], inNodes[outNode]);
+                            outGraph[inNode].Remove(i);
+                            inGraph[outNode].Remove(i);
+
+                            outGraph[inNode].Add(outNode);
+                            inGraph[outNode].Add(inNode);
                         }
                     }
                 }
@@ -330,9 +420,9 @@ namespace LinkBake
 
             for (int i = 0; i < vertices.Length; ++i)
             {
-                for (int outIndex = 1; outIndex <= outNodes[i][0]; ++outIndex)
+                for (int outIndex = 0; outIndex < outGraph[i].Count; ++outIndex)
                 {
-                    var outNode = outNodes[i][outIndex];
+                    var outNode = outGraph[i][outIndex];
                     
                     edges.Add(i);
                     edges.Add(outNode);
@@ -340,21 +430,17 @@ namespace LinkBake
             }
         }
 
-        private void GenerateGraph(ref List<int> edges, out List<Dictionary<int, int>> inGraph, out List<Dictionary<int, int>> outGraph, out List<List<int>> inNodes, out List<List<int>> outNodes)
+        private void GenerateGraph(ref List<int> edges, out List<QuickHashList<int>> inGraph, out List<QuickHashList<int>> outGraph)
         {
-            var vertices = _triangulationData.vertices;
+            var vertices = _vertices;
 
-            inGraph = new List<Dictionary<int, int>>();
-            outGraph = new List<Dictionary<int, int>>();
-            inNodes = new List<List<int>>();
-            outNodes = new List<List<int>>();
+            inGraph = new List<QuickHashList<int>>();
+            outGraph = new List<QuickHashList<int>>();
 
             for (int i = 0; i < vertices.Length; ++i)
             {
-                inGraph.Add(new Dictionary<int, int>());
-                outGraph.Add(new Dictionary<int, int>());
-                inNodes.Add(new List<int>{0});
-                outNodes.Add(new List<int>{0});
+                inGraph.Add(new QuickHashList<int>());
+                outGraph.Add(new QuickHashList<int>());
             }
 
             for (int i = 0; i < edges.Count; i += 2)
@@ -362,56 +448,26 @@ namespace LinkBake
                 var p0 = edges[i];
                 var p1 = edges[i + 1];
 
-                AddNodeToGraph(p0, inGraph[p1], inNodes[p1]);
-
-                AddNodeToGraph(p1, outGraph[p0], outNodes[p0]);
+                inGraph[p1].Add(p0);
+                outGraph[p0].Add(p1);
             }
-        }
-
-        private void AddNodeToGraph(int point, Dictionary<int, int> graph, List<int> nodes)
-        {
-            int index;
-            if (!graph.TryGetValue(point, out index))
-            {
-                if (nodes[0] + 1 < nodes.Count)
-                {
-                    nodes[nodes[0] + 1] = point;
-                }
-                else
-                {
-                    nodes.Add(point);
-                }
-                ++nodes[0];
-                graph.Add(point, nodes[0]);
-            }
-        }
-
-        private void RemoveNodeFromGraph(int point, Dictionary<int, int> graph, List<int> nodes)
-        {
-            int index;
-            if (graph.TryGetValue(point, out index))
-            {
-                graph.Remove(point);
-                nodes[index] = nodes[nodes[0]];
-                nodes[nodes[0]] = -1;
-                --nodes[0];
-            }
-            else
-            {
-                Debug.LogErrorFormat("error remove node from graph at {0}", point);
-            }
-           
         }
 
         #endregion
 
-        #region ²¢²é¼¯
+        #region å¹¶æŸ¥é›†
 
         int Find(int x, ref List<int> f)
         {
             return x == f[x] ? x : f[x] = Find(f[x], ref f);
         }
 
+        /// <summary>
+        /// åˆå¹¶xå’Œyçš„å¹¶æŸ¥é›†, yçš„æ ¹èŠ‚ç‚¹å°†æˆä¸ºæ–°çš„æ ¹èŠ‚ç‚¹
+        /// </summary>
+        /// <param name="x"></param>
+        /// <param name="y"></param>
+        /// <param name="f"></param>
         void Union(int x, int y, ref List<int> f)
         {
             var fx = Find(f[x], ref f);
@@ -426,7 +482,7 @@ namespace LinkBake
 
         #region dropdown link
 
-        [FoldoutGroup("²Ù×÷"), Button("Éú³Édropdown link")]
+        [FoldoutGroup("æ“ä½œ"), Button("ç”Ÿæˆdropdown link")]
         private void GenerateDropDownLinks()
         {
             RemoveLinks();
@@ -440,7 +496,7 @@ namespace LinkBake
 
         private void GenerateDropDownLinksAlongSelectEdge(int index)
         {
-            var vertices = _triangulationData.vertices;
+            var vertices = _vertices;
 
             var start = vertices[_edges[2 * index]];
             var end = vertices[_edges[2 * index + 1]];
@@ -454,7 +510,7 @@ namespace LinkBake
             var mid = (start + end) * 0.5f + errorOffset;
 
             var radius = _agentSetting.AgentRadius;
-            var dropHeight = _agentSetting.LedgeDropHeight;
+            var dropHeight = DropHeight;
 
             var sampleOffset = DropDis * normal;
 
@@ -491,7 +547,8 @@ namespace LinkBake
         {
             foreach (var info in dropDownLinkInfos)
             {
-                AddLink(info, NavMeshLayer.Drop);
+                AddLink(info, (int)NavmeshLayer.JumpOffWall);
+                _linkInfos.Add(info);
             }
         }
 
@@ -542,7 +599,7 @@ namespace LinkBake
 
         #region manage link
 
-        private void AddLink(Vector3 start, Vector3 end, NavMeshLayer type)
+        private void AddLink(Vector3 start, Vector3 end, int type)
         {
             NavMeshLinkData link = new NavMeshLinkData();
 
@@ -565,7 +622,7 @@ namespace LinkBake
             }
         }
 
-        private void AddLink(LinkInfo linkInfo, NavMeshLayer type)
+        private void AddLink(LinkInfo linkInfo, int type)
         {
             NavMeshLinkData link = new NavMeshLinkData();
 
@@ -576,9 +633,9 @@ namespace LinkBake
             link.costModifier = -1;
 
             link.width = linkInfo.Width;
-            link.area = (int)type;
+            link.area = type;
 
-            var linkInstance = NavMesh.AddLink(link);
+            var linkInstance = NavMesh.AddLink(link, linkInfo.Origin, linkInfo.Rotation);
             if (linkInstance.valid)
                 _links.Add(linkInstance);
             else
@@ -587,9 +644,12 @@ namespace LinkBake
             }
         }
 
-        [FoldoutGroup("²Ù×÷"), Button("ÒÆ³ıËùÓĞlink")]
+        [FoldoutGroup("æ“ä½œ"), Button("ç§»é™¤æ‰€æœ‰link")]
         private void RemoveLinks()
         {
+            if (_links == null)
+                return;
+
             foreach (var link in _links)
             {
                 if (link.valid)
@@ -597,6 +657,7 @@ namespace LinkBake
             }
 
             _links.Clear();
+            _linkInfos.Clear();
         }
 
         private void MergeLinks(float stepSize, ref List<LinkInfo> totalLinkInfos, out List<LinkInfo> mergedLinkInfos)
@@ -624,7 +685,7 @@ namespace LinkBake
                 var tmpStep = linkInfo.End - linkRightBound.End;
                 var diff = (tmpStep - step).sqrMagnitude;
 
-                if (diff <= 0.001f)
+                if (diff < Eps)
                 {
                     linkLeftBound.Width += stepSize;
                     linkRightBound = linkInfo;
@@ -646,20 +707,187 @@ namespace LinkBake
             var endMid = (left.End + right.End) * 0.5f;
             var width = left.Width;
 
+            var origin = startMid;
+            startMid -= origin;
+            endMid -= origin;
+
+            var from = right.Start - left.Start;
+            var to = from;
+            from.y = 0;
+
+            var rot = Quaternion.FromToRotation(from, to);
+
             mergedLinkInfos.Add(new LinkInfo
             {
                 Start = startMid,
                 End = endMid,
                 Width = width,
+                Origin = origin,
+                Rotation = rot,
             });
         }
 
         #endregion
 
+        #region å‰”é™¤ä¸è”é€šåŒºåŸŸ
+
+        [FoldoutGroup("æ“ä½œ"), Button("å°†å½“å‰é€‰ä¸­ç‚¹æ·»åŠ åˆ°linké‡‡æ ·ç‚¹é›†")]
+        void AddSelectPosToSampleSet()
+        {
+            NavMeshHit hit;
+            if (!NavMesh.SamplePosition(SelectPos, out hit, 0.1f, -1))
+            {
+                Debug.LogWarningFormat("select pos {0} invalid!", SelectPos);
+                return;
+            }
+
+            SampleRoot.Add(hit.position);
+        }
+
+        [FoldoutGroup("æ“ä½œ"), Button("å‰”é™¤é¢å¤–åŒºåŸŸ")]
+        private void CullUseless()
+        {
+            CullVertices();
+            GenerateDropDownLinks();
+        }
+
+        private void CullVertices()
+        {
+            if(SampleRoot.Count <= 0)
+                return;
+
+            var vertices = _vertices;
+
+            List<int> father = new List<int>();
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                father.Add(i);
+            }
+
+            var rootOffset = father.Count;
+
+            father.Add(rootOffset);
+            for (int i = 1; i < SampleRoot.Count; ++i)
+            {
+                father.Add(rootOffset + i);
+                Union(rootOffset + i - 1, rootOffset + i, ref father);
+            }
+
+            //æŒ‰è¾¹çš„è¿æ¥å…³ç³»æ„å»ºä¸€éå¹¶æŸ¥é›†,ç¼©å°é‡‡æ ·ç›®æ ‡é›†åˆå¤§å°
+            for (int i = 0; i < _edges.Count; i += 2)
+            {
+                var p0 = _edges[i];
+                var p1 = _edges[i + 1];
+
+                Union(p0, p1, ref father);
+            }
+
+            QuickHashList<int> unionRoot = new QuickHashList<int>();
+
+            for (int i = 0; i < vertices.Length; ++i)
+            {
+                var fa = Find(i, ref father);
+                if(fa != i)
+                    continue;
+
+                bool canUnion = false;
+                var p0 = vertices[i];
+
+                for (int j = 0; j < unionRoot.Count; ++j)
+                {
+                    var index = unionRoot[j];
+                    var p1 = vertices[index];
+
+                    var hasPath = HasPath(p0, p1);
+
+                    if (hasPath)
+                    {
+                        canUnion = true;
+                        unionRoot.Remove(fa);
+                        Union(i, index, ref father);
+                        fa = Find(i, ref father);
+                    }
+                }
+
+                if(!canUnion)
+                    unionRoot.Add(i);
+            }
+
+            for (int i = 0; i < unionRoot.Count; ++i)
+            {
+                var index = unionRoot[i];
+                var p0 = vertices[index];
+
+                for (int j = 0; j < SampleRoot.Count; ++j)
+                {
+                    var rootIndex = rootOffset + j;
+                    var p1 = SampleRoot[j];
+
+                    var hasPath = HasPath(p0, p1);
+
+                    if (hasPath)
+                    {
+                        Union(index, rootIndex, ref father);
+                        break;
+                    }
+                }
+            }
+
+            QuickHashList<int> usefulVerticeIndex = new QuickHashList<int>();
+            List<int> usefulEdges = new List<int>();
+
+            for (int i = 0; i < vertices.Length; ++i)
+            {
+                var fa = Find(i, ref father);
+
+                if (fa >= rootOffset)
+                {
+                    usefulVerticeIndex.Add(i);
+                }
+            }
+
+            for (int i = 0; i < _edges.Count; i+=2)
+            {
+                var p0 = _edges[i];
+                var p1 = _edges[i + 1];
+
+                var np0 = usefulVerticeIndex.Find(p0);
+                var np1 = usefulVerticeIndex.Find(p1);
+
+                if (np0 >= 0 && np1 >= 0)
+                {
+                    usefulEdges.Add(np0);
+                    usefulEdges.Add(np1);
+                }
+            }
+
+            _edges = usefulEdges;
+
+            Vector3[] usefulVertices = new Vector3[usefulVerticeIndex.Count];
+            for (int i = 0; i < usefulVerticeIndex.Count; i++)
+            {
+                var v = vertices[usefulVerticeIndex[i]];
+                usefulVertices[i] = v;
+            }
+
+            _vertices = usefulVertices;
+        }
+
+        private bool HasPath(Vector3 p0, Vector3 p1)
+        {
+            var hasPath = NavMesh.CalculatePath(p0, p1, -1, _path) && _path.corners.Length > 1;
+            var diff = (p1 - _path.corners[_path.corners.Length - 1]).sqrMagnitude;
+
+            hasPath &= (diff < _agentSetting.CellSize);
+
+            return hasPath;
+        }
+
+        #endregion
 
         #region Debug
 
-        [FoldoutGroup("µ÷ÊÔ"), Button("ÏÔÊ¾µ÷ÊÔĞÅÏ¢")]
+        [FoldoutGroup("è°ƒè¯•"), Button("æ˜¾ç¤ºè°ƒè¯•ä¿¡æ¯")]
         void ShowDebugInfo()
         {
             _showDebugInfo = !_showDebugInfo;
@@ -667,14 +895,37 @@ namespace LinkBake
 
         private void DrawEdge(int index, Color color)
         {
-            var vertices = _triangulationData.vertices;
+            var vertices = _vertices;
 
             var p0 = vertices[_edges[2 * index]];
             var p1 = vertices[_edges[2 * index + 1]];
 
-            Debug.DrawLine(p0, p1, color);
-            Handles.Label(p0, "s: " +  _edges[2 * index].ToString(), SirenixGUIStyles.BlackLabel);
-            Handles.Label(p1, "e: " + _edges[2 * index + 1].ToString(), SirenixGUIStyles.BlackLabel);
+            Gizmos.color = color;
+            Gizmos.DrawLine(p0, p1);
+
+            GUI.color = Color.black;
+            Handles.Label(p0, "s: " +  _edges[2 * index].ToString(), SirenixGUIStyles.BoldLabel);
+            Handles.Label(p1, "e: " + _edges[2 * index + 1].ToString(), SirenixGUIStyles.BoldLabel);
+
+            var vec = (p1 - p0).normalized;
+            Handles.Label((p0+p1)*0.5f, "normal: " + vec.ToString(), SirenixGUIStyles.BoldLabel);
+
+            GUI.color = Color.white;
+        }
+
+        private void DrawAllEdgesFromSelectEdgeStartPoint(int index, Color color)
+        {
+            var start = _edges[2 * index];
+            var bound = (int)(_edges.Count * 0.5f);
+            for (int i = 0; i < bound; ++i)
+            {
+                var p0 = _edges[2 * i];
+                var p1 = _edges[2 * i + 1];
+                if(p0 != start && p1 != start)
+                    continue;
+
+                DrawEdge(i, color);
+            }
         }
 
         private void DrawTriangulation(int index, Color color, bool showLabel = true)
@@ -687,9 +938,10 @@ namespace LinkBake
             var p1 = vertices[indices[i + 1]];
             var p2 = vertices[indices[i + 2]];
 
-            Debug.DrawLine(p0, p1, color);
-            Debug.DrawLine(p1, p2, color);
-            Debug.DrawLine(p2, p0, color);
+            Gizmos.color = color;
+            Gizmos.DrawLine(p0, p1);
+            Gizmos.DrawLine(p1, p2);
+            Gizmos.DrawLine(p2, p0);
 
             if (showLabel)
             {
@@ -710,13 +962,49 @@ namespace LinkBake
 
         private void DrawEdges()
         {
-            var vertices = _triangulationData.vertices;
+            var vertices = _vertices;
             for (int i = 0; i < _edges.Count; i += 2)
             {
                 var p0 = vertices[_edges[i]];
                 var p1 = vertices[_edges[i + 1]];
-                Debug.DrawLine(p0, p1, Color.red);
+
+                Gizmos.color = Color.red;
+                Gizmos.DrawLine(p0, p1);
             }
+        }
+
+        private void OnSceneGUI(SceneView sceneView)
+        {
+            Event currentEvent = Event.current;
+            if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0)
+            {
+                Ray ray = HandleUtility.GUIPointToWorldRay(currentEvent.mousePosition);
+                RaycastHit rayHit;
+                if (Physics.Raycast(ray, out rayHit))
+                {
+                    SelectPos = rayHit.point;
+                    NavMeshHit hit;
+                    if (NavMesh.SamplePosition(rayHit.point, out hit, 0.1f, -1))
+                    {
+                        SelectPos = hit.position;
+                    }
+                }
+            }
+        }
+
+        private void DrawAllSampleRoot(Color color)
+        {
+            Gizmos.color = color;
+            foreach (var pos in SampleRoot)
+            {
+                Gizmos.DrawSphere(pos, 0.5f);
+            }
+        }
+
+        private void DrawSelectPos(Color color)
+        {
+            Gizmos.color = color;
+            Gizmos.DrawSphere(SelectPos, 0.5f);
         }
 
         #endregion
@@ -742,6 +1030,8 @@ namespace LinkBake
     {
         public Vector3 Start;
         public Vector3 End;
+        public Vector3 Origin;
+        public Quaternion Rotation;
         public float Width;
     }
 }
