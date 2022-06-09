@@ -164,6 +164,7 @@ namespace LinkBake
             else 
                 CalcVertices();
 
+            FilterVerticesWithPhysics();
             CalcEdges(out _edges);
             MergeEdges(ref _edges);
             CalcEdgesAgain(ref _edges);
@@ -359,6 +360,58 @@ namespace LinkBake
             }
         }
 
+        private void FilterVerticesWithPhysics()
+        {
+            var vertices = _vertices;
+            var indices = _indices;
+
+            var radius = 0.01f;
+
+            QuickHashList<int> filteredVertices = new QuickHashList<int>();
+            List<int> newIndices = new List<int>();
+            List<Vector3> newVertices = new List<Vector3>();
+
+            for (int i = 0; i < vertices.Length; ++i)
+            {
+                var v = vertices[i];
+
+                var pos = v + radius * 1.1f * Vector3.up;
+
+                if(Physics.CheckSphere(pos, radius, -1))
+                    continue;
+
+                filteredVertices.Add(i);
+            }
+
+            for (int i = 0; i < indices.Length; i += 3)
+            {
+                var p0 = indices[i];
+                var p1 = indices[i + 1];
+                var p2 = indices[i + 2];
+
+                var np0 = filteredVertices.Find(p0);
+                var np1 = filteredVertices.Find(p1);
+                var np2 = filteredVertices.Find(p2);
+
+                if (np0 >= 0 && np1 >= 0 && np2 >= 0)
+                {
+                    newIndices.Add(np0);
+                    newIndices.Add(np1);
+                    newIndices.Add(np2);
+                }
+            }
+
+            for (int i = 0; i < filteredVertices.Count; ++i)
+            {
+                var index = filteredVertices[i];
+
+                newVertices.Add(vertices[index]);
+            }
+
+            _vertices = newVertices.ToArray();
+            _indices = newIndices.ToArray();
+        }
+
         private bool EdgeExisted(KeyValuePair<int, int> pair, ref HashSet<KeyValuePair<int, int>> hashSet)
         {
             return hashSet.Contains(pair);
@@ -501,27 +554,38 @@ namespace LinkBake
             var start = vertices[_edges[2 * index]];
             var end = vertices[_edges[2 * index + 1]];
 
+            NavMeshHit hit;
+
             var normal = end - start;
             normal.y = 0;
             normal = new Vector3(-normal.z, 0, normal.x);
             normal = normal.normalized;
 
-            var errorOffset = -_agentSetting.CellSize * normal;
-            var mid = (start + end) * 0.5f + errorOffset;
+            var cellErrorOffset = _agentSetting.CellSize;
+            var mid = (start + end) * 0.5f;
 
             var radius = _agentSetting.AgentRadius;
+            var checkPos = mid + normal * radius * 0.5f;
+            var checkRadius = Mathf.Max(_agentSetting.CellSize, radius * 0.4f - _agentSetting.CellSize);
             var dropHeight = DropHeight;
+
+            if (!NavMesh.SamplePosition(mid, out hit, checkRadius, -1))
+            {
+                return;
+            }
+
+            var errorOffset = hit.position - mid;
+            mid = hit.position;
+            start += errorOffset;
+            end += errorOffset;
 
             var sampleOffset = DropDis * normal;
 
-            var sampleStart = start + sampleOffset + errorOffset;
-            var sampleEnd = end + sampleOffset + errorOffset;
-
-            var checkPos = mid + normal * radius * 0.5f;
+            var sampleStart = start + sampleOffset;
+            var sampleEnd = end + sampleOffset;
             var sampleStep = radius * 2f;
 
-            NavMeshHit hit;
-            if (NavMesh.SamplePosition(checkPos, out hit, radius * 0.4f - _agentSetting.CellSize, -1))
+            if (NavMesh.SamplePosition(checkPos, out hit, checkRadius, -1))
             {
                 return;
             }
@@ -782,41 +846,13 @@ namespace LinkBake
                 Union(p0, p1, ref father);
             }
 
-            QuickHashList<int> unionRoot = new QuickHashList<int>();
-
             for (int i = 0; i < vertices.Length; ++i)
             {
                 var fa = Find(i, ref father);
                 if(fa != i)
                     continue;
 
-                bool canUnion = false;
                 var p0 = vertices[i];
-
-                for (int j = 0; j < unionRoot.Count; ++j)
-                {
-                    var index = unionRoot[j];
-                    var p1 = vertices[index];
-
-                    var hasPath = HasPath(p0, p1);
-
-                    if (hasPath)
-                    {
-                        canUnion = true;
-                        unionRoot.Remove(fa);
-                        Union(i, index, ref father);
-                        fa = Find(i, ref father);
-                    }
-                }
-
-                if(!canUnion)
-                    unionRoot.Add(i);
-            }
-
-            for (int i = 0; i < unionRoot.Count; ++i)
-            {
-                var index = unionRoot[i];
-                var p0 = vertices[index];
 
                 for (int j = 0; j < SampleRoot.Count; ++j)
                 {
@@ -827,7 +863,7 @@ namespace LinkBake
 
                     if (hasPath)
                     {
-                        Union(index, rootIndex, ref father);
+                        Union(i, rootIndex, ref father);
                         break;
                     }
                 }
@@ -875,10 +911,9 @@ namespace LinkBake
 
         private bool HasPath(Vector3 p0, Vector3 p1)
         {
-            var hasPath = NavMesh.CalculatePath(p0, p1, -1, _path) && _path.corners.Length > 1;
-            var diff = (p1 - _path.corners[_path.corners.Length - 1]).sqrMagnitude;
-
-            hasPath &= (diff < _agentSetting.CellSize);
+            var hasPath = NavMesh.CalculatePath(p0, p1, -1, _path)
+                          && _path.corners.Length > 1
+                          && ((p1 - _path.corners[_path.corners.Length - 1]).sqrMagnitude < _agentSetting.CellSize);
 
             return hasPath;
         }

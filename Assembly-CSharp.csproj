@@ -8,8 +8,7 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProductVersion>10.0.20506</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
-    <RootNamespace>
-    </RootNamespace>
+    <RootNamespace></RootNamespace>
     <ProjectGuid>{F2FD53A0-C0AE-E94F-E198-9A314E87D103}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
@@ -58,6 +57,7 @@
     <Compile Include="Assets\KDTree\Heap\BaseHeap.cs" />
     <Compile Include="Assets\KDTree\KDTree\KDQuery\QueryKNearest.cs" />
     <Compile Include="Assets\Scripts\link\QuickHashList.cs" />
+    <Compile Include="Assets\Scripts\link\LinkBakeDrawHelper.cs" />
     <Compile Include="Assets\Scripts\link\BakeLink.cs" />
     <Compile Include="Assets\Scripts\MathTest.cs" />
     <Compile Include="Assets\KDTree\KDTree\KDTree.cs" />
@@ -73,12 +73,12 @@
     <Compile Include="Assets\KDTree\Heap\MinHeap.cs" />
     <Compile Include="Assets\Scripts\link\vectorTest.cs" />
     <Compile Include="Assets\KDTree\KDTree\KDBounds.cs" />
+    <Compile Include="Assets\Scripts\link\linkTest.cs" />
     <Compile Include="Assets\KDTree\KDTree\KDQuery\QueryRadius.cs" />
     <Compile Include="Assets\KDTree\KDTree\KDNode.cs" />
     <Compile Include="Assets\KDTree\KDTree\KDQuery\QueryClosest.cs" />
     <Compile Include="Assets\Scripts\Agent.cs" />
     <Compile Include="Assets\KDTree\Heap\KSmallest.cs" />
-    <Compile Include="Assets\Scripts\link\LinkBakeDrawHelper.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">
