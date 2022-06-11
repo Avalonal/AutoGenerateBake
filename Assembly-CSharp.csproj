@@ -79,6 +79,12 @@
     <Compile Include="Assets\KDTree\KDTree\KDQuery\QueryClosest.cs" />
     <Compile Include="Assets\Scripts\Agent.cs" />
     <Compile Include="Assets\KDTree\Heap\KSmallest.cs" />
+    <Compile Include="Assets\Scripts\link\PhyTest.cs" />
+    <Compile Include="Assets\Scripts\link\GenerateLinkHandler\LinkUtils.cs" />
+    <Compile Include="Assets\Scripts\link\GenerateLinkHandler\LinkGeneratorBase.cs" />
+    <Compile Include="Assets\Scripts\link\GenerateLinkHandler\DropDownLinkGenerator.cs" />
+    <Compile Include="Assets\Scripts\link\GenerateLinkHandler\LinkBuildSetting.cs" />
+    <Compile Include="Assets\Scripts\link\GenerateLinkHandler\LinkGeneratorType.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">
